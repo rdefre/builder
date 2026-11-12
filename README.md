@@ -87,10 +87,16 @@ Everything is optional - see [`.env.example`](./.env.example) for the annotated 
 
 | Variable | Purpose |
 |----------|---------|
-| `VITE_GOOGLE_FONTS_KEY` | Google Fonts picker (falls back to a bundled list) |
-| `VITE_UNSPLASH_ACCESS_KEY` / `VITE_PIXABAY_KEY` | stock image/video search tabs (hidden without keys) |
+| `GOOGLE_FONTS_API_KEY` | Full font catalog, via the local Vite server (bundled list remains the fallback) |
+| `UNSPLASH_ACCESS_KEY` | Unsplash photo search, via the local Vite server |
+| `VITE_PIXABAY_KEY` | Pixabay video search (hidden without a key) |
 | `VITE_REVYME_CLOUD` | set to `true` only when running against the hosted cloud backend |
 | `VITE_CDN_HOST` / `VITE_PLATFORM_HOST` | point a self-hosted fork at your own asset CDN / platform |
+
+For local dev or preview, put Google Fonts and Unsplash keys in ignored
+`.env.local` without a `VITE_` prefix. The local media routes accept requests
+only on the same machine and do not publish the keys. Use `npm run start`
+to rebuild the preview after changing which providers are enabled.
 
 ![The Add Language dialog - locale search, display name, slug and fallback](docs/readme/localization.webp)
 

@@ -11,13 +11,19 @@ import Modal from '@/design-system/Modal';
 import { backend } from '@/backend';
 import { getProjectId } from '@/backend/project-id';
 
-// Unsplash search. In CLOUD mode it goes through the backend proxy
-// (`/api/media/unsplash`) so Revyme's key stays server-side and out of the
-// browser bundle; in STANDALONE mode a self-hoster's own VITE key calls
-// Unsplash directly. Without either, the Unsplash tab is hidden (Upload +
-// Create remain fully functional).
-const UNSPLASH_ACCESS_KEY = import.meta.env.VITE_UNSPLASH_ACCESS_KEY as string | undefined;
-const HAS_UNSPLASH = CLOUD_ENABLED || !!UNSPLASH_ACCESS_KEY;
+declare const __REVYME_LOCAL_UNSPLASH__: boolean;
+const HAS_UNSPLASH = CLOUD_ENABLED || (typeof __REVYME_LOCAL_UNSPLASH__ !== 'undefined' && __REVYME_LOCAL_UNSPLASH__);
+
+function unsplashCredit(href: string | undefined): string | undefined {
+  if (!href) return;
+  try {
+    const url = new URL(href);
+    if (url.protocol !== 'https:' || url.hostname !== 'unsplash.com') return;
+    url.searchParams.set('utm_source', 'revyme_local');
+    url.searchParams.set('utm_medium', 'referral');
+    return url.href;
+  } catch { return; }
+}
 
 const SEARCH_TERMS = ['nature', 'architecture', 'abstract', 'texture', 'gradient', 'minimal', 'dark', 'city', 'ocean', 'mountains'];
 
@@ -36,6 +42,8 @@ interface UnsplashImage {
   id: string;
   urls: { small: string; regular: string; thumb: string };
   alt_description: string | null;
+  user?: { name: string; links?: { html?: string } };
+  links?: { download_location?: string };
 }
 
 // Admin-only platform 3D assets (LEGO-style renders) — license-restricted, so
@@ -58,6 +66,10 @@ export default function ImageSearchModal({ isOpen, onClose, onSelect }: ImageSea
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UnsplashImage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [unsplashError, setUnsplashError] = useState<string | null>(null);
+  const [selectingPhoto, setSelectingPhoto] = useState(false);
+  const selectingPhotoRef = useRef<AbortController | null>(null);
+  useEffect(() => () => selectingPhotoRef.current?.abort(), [isOpen]);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const loadingMoreRef = useRef(false); // sync guard against concurrent page fetches
@@ -90,17 +102,10 @@ export default function ImageSearchModal({ isOpen, onClose, onSelect }: ImageSea
     }
     trace.action('image-search:query', { query: q, page: pageNum, append });
     try {
-      // Cloud → same-origin backend proxy (key server-side); standalone → direct
-      // with the self-hoster's own key. Both return the raw Unsplash shape.
-      const res = CLOUD_ENABLED
-        ? await fetch(
-            `/api/media/unsplash?query=${encodeURIComponent(q)}&per_page=${UNSPLASH_PER_PAGE}&page=${pageNum}`,
-            { credentials: 'same-origin' }
-          )
-        : await fetch(
-            `https://api.unsplash.com/search/photos?query=${encodeURIComponent(q)}&per_page=${UNSPLASH_PER_PAGE}&page=${pageNum}`,
-            { headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` } }
-          );
+      setUnsplashError(null);
+      const params = new URLSearchParams({ query: q, per_page: String(UNSPLASH_PER_PAGE), page: String(pageNum) });
+      const res = await fetch('/api/media/unsplash?' + params, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('Unsplash search returned ' + res.status);
       const data = await res.json();
       const imgs = (data.results || []) as UnsplashImage[];
       setResults((prev) => {
@@ -117,6 +122,7 @@ export default function ImageSearchModal({ isOpen, onClose, onSelect }: ImageSea
       trace.action('image-search:results', { count: imgs.length, page: pageNum });
     } catch (err) {
       trace.error('image-search:error', err);
+      setUnsplashError('Unsplash search is unavailable. Try again or use Upload.');
       if (!append) setResults([]);
       setHasMore(false);
     } finally {
@@ -145,6 +151,7 @@ export default function ImageSearchModal({ isOpen, onClose, onSelect }: ImageSea
       setQuery(term);
       setResults([]);
       setUploadError(null);
+      setUnsplashError(null);
       setTab(HAS_UNSPLASH ? 'unsplash' : 'upload');
       if (HAS_UNSPLASH) searchUnsplash(term);
     }
@@ -251,6 +258,31 @@ export default function ImageSearchModal({ isOpen, onClose, onSelect }: ImageSea
     onClose();
   };
 
+  const handleUnsplashSelect = async (img: UnsplashImage) => {
+    if (CLOUD_ENABLED) return handleSelect(img.urls.regular);
+    if (selectingPhotoRef.current) return;
+    const controller = new AbortController();
+    selectingPhotoRef.current = controller;
+    setSelectingPhoto(true);
+    setUnsplashError(null);
+    try {
+      const location = new URL(img.links?.download_location ?? '');
+      const params = new URLSearchParams({ id: img.id });
+      const ixid = location.searchParams.get('ixid');
+      if (ixid) params.set('ixid', ixid);
+      const res = await fetch('/api/local-media/unsplash-selection?' + params, { method: 'POST', signal: controller.signal });
+      if (!res.ok) throw new Error('Unsplash selection returned ' + res.status);
+      if (!controller.signal.aborted) handleSelect(img.urls.regular);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      trace.error('image-search:selection-error', err);
+      setUnsplashError('Could not register this selection with Unsplash. Try again.');
+    } finally {
+      selectingPhotoRef.current = null;
+      setSelectingPhoto(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -315,24 +347,38 @@ export default function ImageSearchModal({ isOpen, onClose, onSelect }: ImageSea
             {loading && Array.from({ length: 24 }).map((_, i) => (
               <div key={i} className="aspect-square cut-corners overflow-hidden animate-pulse bg-gradient-to-r from-[var(--grid-line)] via-[var(--bg-hover)] to-[var(--grid-line)]" />
             ))}
-            {!loading && results.map(img => (
-              <button
-                key={img.id}
-                onClick={() => handleSelect(img.urls.regular)}
-                className="relative group cursor-pointer aspect-square cut-corners overflow-hidden"
-              >
-                <div
-                  className="w-full h-full bg-cover bg-center transition-transform group-hover:scale-105"
-                  style={{ backgroundImage: `url(${img.urls.small})` }}
-                />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
-              </button>
-            ))}
+            {unsplashError && (
+              <p role="alert" className="col-span-6 text-xs text-[var(--text-secondary)]">{unsplashError}</p>
+            )}
+            {!loading && results.map(img => {
+              const photographer = unsplashCredit(img.user?.links?.html);
+              return (
+                <div key={img.id} className="min-w-0">
+                  <button type="button" disabled={selectingPhoto}
+                    aria-label={img.alt_description || 'Select Unsplash photo'}
+                    onClick={() => void handleUnsplashSelect(img)}
+                    className="relative block w-full group cursor-pointer aspect-square cut-corners overflow-hidden disabled:opacity-60"
+                  >
+                    <div className="w-full h-full bg-cover bg-center transition-transform group-hover:scale-105"
+                      style={{ backgroundImage: "url(" + img.urls.small + ")" }}
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
+                  </button>
+                  {photographer && (
+                    <p className="text-[10px] text-[var(--text-secondary)]">
+                      <a href={photographer} target="_blank" rel="noopener noreferrer" className="underline">{img.user?.name}</a>
+                      {' on '}
+                      <a href="https://unsplash.com/?utm_source=revyme_local&amp;utm_medium=referral" target="_blank" rel="noopener noreferrer" className="underline">Unsplash</a>
+                    </p>
+                  )}
+                </div>
+              );
+            })}
             {/* Loading-more skeletons (append) — existing results stay visible. */}
             {loadingMore && Array.from({ length: 6 }).map((_, i) => (
               <div key={`more-${i}`} className="aspect-square cut-corners overflow-hidden animate-pulse bg-gradient-to-r from-[var(--grid-line)] via-[var(--bg-hover)] to-[var(--grid-line)]" />
             ))}
-            {!loading && results.length === 0 && (
+            {!loading && !unsplashError && results.length === 0 && (
               <div className="col-span-6 text-center py-8 text-xs text-[var(--text-secondary)]">
                 No images found. Try a different search term.
               </div>

@@ -4,18 +4,10 @@
 import { trace } from './debug-trace';
 import { CLOUD_ENABLED } from './cloud-flag';
 
-// Google Fonts catalog source. In CLOUD mode we go through the backend proxy
-// (`/api/media/fonts`) so Revyme's key stays server-side and never ships in
-// the browser bundle. In STANDALONE / self-hosted mode there's no backend, so
-// a self-hoster's OWN `VITE_GOOGLE_FONTS_KEY` (if set) calls Google directly —
-// their key, their choice. With neither, we fall back to DEFAULT_FONTS below
-// (fonts still LOAD fine via fonts.googleapis.com CSS, which needs no key —
-// only the browsable catalog/tags list is reduced).
-const API_KEY = import.meta.env.VITE_GOOGLE_FONTS_KEY as string | undefined;
-const CATALOG_AVAILABLE = CLOUD_ENABLED || !!API_KEY;
-const CATALOG_URL = CLOUD_ENABLED
-  ? '/api/media/fonts'
-  : `https://www.googleapis.com/webfonts/v1/webfonts?key=${API_KEY}&sort=popularity&capability=FAMILY_TAGS`;
+// Both backends serve the catalog without exposing the API key.
+declare const __REVYME_LOCAL_GOOGLE_FONTS__: boolean;
+const CATALOG_URL = '/api/media/fonts';
+const CATALOG_AVAILABLE = CLOUD_ENABLED || (typeof __REVYME_LOCAL_GOOGLE_FONTS__ !== 'undefined' && __REVYME_LOCAL_GOOGLE_FONTS__);
 
 export interface FontItem {
   family: string;
@@ -78,24 +70,18 @@ export function fetchGoogleFonts(): Promise<FontItem[]> {
   if (cachedFonts) return Promise.resolve(cachedFonts);
   if (fetchPromise) return fetchPromise;
 
-  if (!CATALOG_AVAILABLE) {
-    trace.action('google-fonts:no-catalog-fallback', { count: DEFAULT_FONTS.length });
-    cachedFonts = DEFAULT_FONTS;
-    return Promise.resolve(DEFAULT_FONTS);
-  }
+  if (!CATALOG_AVAILABLE) return Promise.resolve(DEFAULT_FONTS);
 
   trace.action('google-fonts:fetch-start', { cloud: CLOUD_ENABLED });
 
-  // 'same-origin' sends the auth cookie to the same-origin backend proxy (cloud)
-  // but NOT to googleapis.com cross-origin (standalone) — avoids a credentialed
-  // CORS rejection on the direct call.
   fetchPromise = fetch(CATALOG_URL, { credentials: 'same-origin' })
     .then(res => {
+      if (!CLOUD_ENABLED && res.status === 503) return { items: DEFAULT_FONTS };
       if (!res.ok) throw new Error(`Google Fonts API: ${res.status}`);
       return res.json();
     })
     .then(data => {
-      const fonts: FontItem[] = (data.items || []).map((item: any) => ({
+      const fonts: FontItem[] = (data.items || []).map((item: Pick<FontItem, 'family'> & Partial<FontItem>) => ({
         family: item.family,
         variants: item.variants || ['regular'],
         category: item.category || 'sans-serif',

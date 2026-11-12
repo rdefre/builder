@@ -65,7 +65,7 @@ export default defineConfig({
       // a DEV editor always connects to it, and the bridge is single-client —
       // a headless tab would steal it from the user's own editor.
       command: `npx vite --port ${PORT} --strictPort`,
-      env: { VITE_REVYME_CLOUD: 'false', VITE_AI_SERVICE_URL: 'http://127.0.0.1:9' },
+      env: { VITE_REVYME_CLOUD: 'false', VITE_AI_SERVICE_URL: 'http://127.0.0.1:9', GOOGLE_FONTS_API_KEY: '', UNSPLASH_ACCESS_KEY: '' },
       url: `http://localhost:${PORT}`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

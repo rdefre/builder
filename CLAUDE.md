@@ -1,5 +1,7 @@
 # Revyme - Architecture & Contribution Guide
 
+@AGENTS.md
+
 Written for AI coding agents, and equally useful as a human orientation doc. Read this before
 your first change; it explains the shape of the system and the rules that hold everywhere.
 

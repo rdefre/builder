@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { localMediaPlugin } from './server/local-media';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import fs from 'node:fs';
@@ -393,7 +394,10 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const cloudMode = env.VITE_REVYME_CLOUD === 'true';
   return {
-  plugins: [react(), tailwindcss(), debugTracePlugin()],
+  plugins: [react(), tailwindcss(), debugTracePlugin(), ...(!cloudMode ? [localMediaPlugin({
+    googleFonts: env.GOOGLE_FONTS_API_KEY,
+    unsplash: env.UNSPLASH_ACCESS_KEY,
+  })] : [])],
   // In cloud mode assets must be served under /builder/ so Next.js rewrite proxy can forward them.
   // Standalone mode uses root path (no proxy).
   base: cloudMode ? '/builder/' : '/',
@@ -445,6 +449,8 @@ export default defineConfig(({ mode }) => {
     exclude: ['framer-motion', '@react-spring/web'],
   },
   define: {
+    __REVYME_LOCAL_UNSPLASH__: !cloudMode && Boolean(env.UNSPLASH_ACCESS_KEY),
+    __REVYME_LOCAL_GOOGLE_FONTS__: !cloudMode && Boolean(env.GOOGLE_FONTS_API_KEY),
     'process.env': {},
     // The @revyme/runtime range the editor itself runs — what a browser-built
     // source export depends on (code/project/source-export.ts), so an exported
