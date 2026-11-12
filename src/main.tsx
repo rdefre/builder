@@ -1,8 +1,15 @@
 import { createRoot } from 'react-dom/client';
+import { lazy, Suspense } from 'react';
 import { Provider, getDefaultStore } from 'jotai';
 import ProjectLoader from './ProjectLoader';
 import './styles/globals.css';
 import { subscribeBuilderTheme } from './editor/builder-theme';
+import { CLOUD_ENABLED } from './shared/cloud-flag';
+import { restoreLocalColorMode } from './backend/local-dashboard';
+
+const LocalDashboard = lazy(() => import('./editor/dashboard/LocalDashboard'));
+const showLocalDashboard = !CLOUD_ENABLED && /^\/dashboard\/?$/.test(window.location.pathname);
+if (!CLOUD_ENABLED) restoreLocalColorMode();
 
 // Restore the saved builder accent BEFORE the first paint (so a non-default
 // theme doesn't flash the stock brass on reload) and keep it in sync with both
@@ -17,6 +24,6 @@ subscribeBuilderTheme();
 // from one path become invisible to readers on the other.
 createRoot(document.getElementById('root')!).render(
   <Provider store={getDefaultStore()}>
-    <ProjectLoader />
+    {showLocalDashboard ? <Suspense fallback={null}><LocalDashboard /></Suspense> : <ProjectLoader />}
   </Provider>
 );

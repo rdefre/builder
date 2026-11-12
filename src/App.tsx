@@ -25,6 +25,7 @@ import { translationsOverlayOpenAtom } from '@/code/stores/left-panel-store';
 import CodeEditorPopup from './editor/CodeEditorPopup';
 import ComponentEditorOverlay from './editor/component-editor/ComponentEditorOverlay';
 import SettingsOverlay from './editor/overlays/SettingsOverlay';
+import { initLocalSettings } from './editor/overlays/LocalConnectionsSection';
 import PageVariablesModal from './editor/ui/PageVariablesModal';
 import LinkedComponentModal from './cloud/components/LinkedComponentModal';
 import PluginEditor from './editor/plugin-editor/PluginEditor';
@@ -57,9 +58,9 @@ import { isShortcutKey } from '@/shared/shortcut-key';
 // shows the static committed `d` for each stroke.
 
 // Register cloud plugin sections (Plans, Domain, Analytics, Submit) —
-// cloud mode only. Standalone/OSS builds get just the core Website
-// settings section; the SettingsOverlay renders whatever is registered.
+// cloud mode only. Standalone builds register their own connection settings.
 if (CLOUD_ENABLED) initCloudPlugin();
+else initLocalSettings();
 
 export default function App() {
   // Lifted to atom so MenuTabs (View → Toggle preview) and the Ctrl+P

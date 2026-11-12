@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { localMediaPlugin } from './server/local-media';
+import { localAiPlugin } from './server/local-ai';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import fs from 'node:fs';
@@ -397,7 +398,7 @@ export default defineConfig(({ mode }) => {
   plugins: [react(), tailwindcss(), debugTracePlugin(), ...(!cloudMode ? [localMediaPlugin({
     googleFonts: env.GOOGLE_FONTS_API_KEY,
     unsplash: env.UNSPLASH_ACCESS_KEY,
-  })] : [])],
+  }), localAiPlugin()] : [])],
   // In cloud mode assets must be served under /builder/ so Next.js rewrite proxy can forward them.
   // Standalone mode uses root path (no proxy).
   base: cloudMode ? '/builder/' : '/',

@@ -22,7 +22,7 @@ import { atom, getDefaultStore } from 'jotai';
 import { getProjectId } from '@/backend/project-id';
 import { trace } from '@/shared/debug-trace';
 
-const STORAGE_KEY_PREFIX = 'revyme:project-name:';
+export const PROJECT_NAME_PREFIX = 'revyme:project-name:';
 
 /** Read the persisted name (if any) for the current project id. Used
  *  to seed `projectNameAtom` on first read so reloads don't flash
@@ -31,7 +31,7 @@ const STORAGE_KEY_PREFIX = 'revyme:project-name:';
 function readPersistedName(): string {
   if (typeof window === 'undefined' || !window.localStorage) return '';
   try {
-    return window.localStorage.getItem(STORAGE_KEY_PREFIX + getProjectId()) ?? '';
+    return window.localStorage.getItem(PROJECT_NAME_PREFIX + getProjectId()) ?? '';
   } catch {
     return '';
   }
@@ -54,9 +54,9 @@ export function setProjectName(name: string): void {
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       if (trimmed) {
-        window.localStorage.setItem(STORAGE_KEY_PREFIX + id, trimmed);
+        window.localStorage.setItem(PROJECT_NAME_PREFIX + id, trimmed);
       } else {
-        window.localStorage.removeItem(STORAGE_KEY_PREFIX + id);
+        window.localStorage.removeItem(PROJECT_NAME_PREFIX + id);
       }
     } catch (err) {
       trace.error('project-store:persist-failed', { error: String(err) });

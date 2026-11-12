@@ -5,7 +5,7 @@ import type { ProjectBackend, ProjectData, RevymeUser, WorkspaceFont } from './t
 import { isKnownProjectFormat } from './types';
 import { trace } from '@/shared/debug-trace';
 
-const STORAGE_PREFIX = 'revyme-project-';
+export const LOCAL_PROJECT_PREFIX = 'revyme-project-';
 
 export class LocalBackend implements ProjectBackend {
   async getUser(): Promise<RevymeUser | null> {
@@ -13,7 +13,7 @@ export class LocalBackend implements ProjectBackend {
   }
 
   async loadProject(id: string): Promise<ProjectData | null> {
-    const key = STORAGE_PREFIX + id;
+    const key = LOCAL_PROJECT_PREFIX + id;
     try {
       const raw = localStorage.getItem(key);
       if (!raw) return null;
@@ -35,8 +35,10 @@ export class LocalBackend implements ProjectBackend {
   }
 
   async saveProject(id: string, data: ProjectData): Promise<void> {
-    const key = STORAGE_PREFIX + id;
+    const key = LOCAL_PROJECT_PREFIX + id;
     localStorage.setItem(key, JSON.stringify(data));
+    // Dashboard metadata must never turn a successful project save into a failure.
+    try { localStorage.setItem('revyme:local-updated:' + id, String(Date.now())); } catch { /* optional timestamp */ }
     trace.action('backend:save-project', { id, source: 'localStorage', fileCount: Object.keys(data.files).length });
   }
 

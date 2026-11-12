@@ -36,6 +36,7 @@ import { useIsViewer } from '@/code/stores/viewer-mode-store';
 import { settingsOverlayOpenAtom, settingsSectionAtom, hasActiveSubscriptionAtom } from '@/code/stores/website-settings-store';
 import { CLOUD_ENABLED } from '@/shared/cloud-flag';
 import { leaveBuilderTo } from '@/backend/leave-builder';
+import { localProjectDashboardPath } from '@/backend/local-dashboard';
 
 // ─── Back chevron — same glyph the settings overlay uses for its
 // "Back to canvas" affordance. Inline so we don't pull a third-
@@ -141,12 +142,12 @@ export function LogoButton() {
           // queue AND awaits the backend save. Doing only the first left the
           // project dirty at unload, which is exactly when the browser's
           // "Leave site?" guard fires.
-          void leaveBuilderTo('/dashboard', 'logo-dashboard');
+          void leaveBuilderTo(CLOUD_ENABLED ? '/dashboard' : localProjectDashboardPath(getProjectId()), 'logo-dashboard');
         },
       },
       {
         id: 'logo-account',
-        label: 'Your Account',
+        label: CLOUD_ENABLED ? 'Your Account' : 'Settings',
         onClick: async () => {
           trace.action('left-header:logo-account');
           // Route to the workspace-scoped account settings in the cloud
@@ -160,6 +161,10 @@ export function LogoButton() {
           // commits + saves before the route swap, so this await can't
           // race autosave.
           const projectId = getProjectId();
+          if (!CLOUD_ENABLED) {
+            await leaveBuilderTo(localProjectDashboardPath(projectId, true), 'logo-account');
+            return;
+          }
           let workspaceId: string | null = null;
           if (projectId !== 'local') {
             workspaceId = await backend.getWebsiteWorkspaceId(projectId).catch(() => null);

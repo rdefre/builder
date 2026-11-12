@@ -81,6 +81,12 @@ Then open **http://localhost:3333**.
 Your work saves to `localStorage` automatically in local mode. No account, no backend, no
 network required.
 
+Open **Go to Dashboard** from the editor's top-left menu, or go to
+`http://localhost:3333/dashboard`. The dashboard lists your saved websites in this
+browser, including older local projects, and lets you search, organize them into
+folders, duplicate them, or archive and restore them. The workspace menu also
+opens local settings and switches between light and dark mode.
+
 ### Optional configuration
 
 Everything is optional - see [`.env.example`](./.env.example) for the annotated list.
@@ -97,6 +103,12 @@ For local dev or preview, put Google Fonts and Unsplash keys in ignored
 `.env.local` without a `VITE_` prefix. The local media routes accept requests
 only on the same machine and do not publish the keys. Use `npm run start`
 to rebuild the preview after changing which providers are enabled.
+
+In standalone mode, open **Settings → Local Admin → AI & MCP**. If Ollama is
+running on this computer, you can list installed models and run a connection
+test. The test does not send project files or enable Vibe editing. Vibe and live
+canvas access from an external MCP client still require a compatible service;
+hosted Revyme API tokens do not grant access to a standalone project.
 
 ![The Add Language dialog - locale search, display name, slug and fallback](docs/readme/localization.webp)
 

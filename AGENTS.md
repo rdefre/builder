@@ -26,5 +26,9 @@ Use this file as the shared starting point for Codex, Claude Code, and other cod
 ## AI tools and handoffs
 
 - A coding agent working on this repository is separate from Revyme's in-editor Vibe and MCP services. [.env.example](.env.example) documents those service settings; the checkout does not supply the compatible AI backend. Do not enable cloud mode or point a local project at a hosted service as a shortcut.
-- Keep credentials out of committed files, browser-exposed environment values, and logs. Keep repository guidance portable across agents and machines. Preserve [NOTICE](NOTICE) and existing attributions.
+- Keep credentials out of browser-exposed environment values, logs, and commits destined for GitHub or any public or unapproved remote. Keep repository guidance portable across agents and machines. Preserve [NOTICE](NOTICE) and existing attributions.
 - When handing off to another agent, record the task, branch and commit, relevant paths, pre-existing changes, what you verified, and the next concrete step. Do not treat a handoff as authorization to publish or deploy.
+
+## Private Gitea exception
+
+The owner authorizes an unsanitized snapshot of this Revyme checkout in the exact private `renato/builder` repository on the owner's Gitea service. When explicitly asked to publish or refresh that copy, include ignored working files such as local environment files, installed dependencies, and build outputs. Verify the server, owner, repository identity, private visibility, anonymous access denial, and absence of outbound mirrors, webhooks, or enabled Actions before upload. Use a separate checkout that has only the verified private Gitea remote. Keep the primary checkout's GitHub ignore rules and publish only sanitized source to GitHub. This exception applies only to this checkout and destination. Do not publish the private snapshot or its history elsewhere, and do not print credentials in logs or handoffs.

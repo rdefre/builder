@@ -120,12 +120,12 @@ export async function* streamAgentTurn(opts: {
  * back, and the chat must unblock when it does (it read "unreachable" as
  * "no engines" and stayed blocked on "Open settings first", 2026-09-23).
  */
-export async function fetchAgentEngines(): Promise<AgentProviderConfig['provider'][] | null> {
+export async function fetchAgentEngines(signal?: AbortSignal): Promise<AgentProviderConfig['provider'][] | null> {
   try {
-    const res = await fetch(`${AI_SERVICE_URL}/api/agent/engines`);
+    const res = await fetch(`${AI_SERVICE_URL}/api/agent/engines`, signal ? { signal } : undefined);
     if (!res.ok) return null;
     const body = await res.json() as { engines?: unknown };
-    return Array.isArray(body.engines) ? body.engines.filter((e): e is AgentProviderConfig['provider'] => typeof e === 'string') : [];
+    return Array.isArray(body.engines) ? body.engines.filter((e): e is AgentProviderConfig['provider'] => typeof e === 'string') : null;
   } catch {
     return null;
   }

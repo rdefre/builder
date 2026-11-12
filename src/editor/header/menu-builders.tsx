@@ -33,6 +33,7 @@ import { projectVersionAtom, projectFS } from '@/code/project/project-fs';
 import { shareAsTemplate, createWebsite } from '@/backend/revyme-backend';
 import { backend } from '@/backend/index';
 import { getProjectId } from '@/backend/project-id';
+import { localWorkspaceForProject, newLocalWebsiteId } from '@/backend/local-dashboard';
 import { toast } from 'sonner';
 import type { AutoPanSpeed, UploadImageFormat } from '@/code/stores/user-preferences-store';
 import { previewModeAtom, shortcutsModalOpenAtom, exportDropdownOpenAtom } from '@/code/stores/editor-store';
@@ -101,12 +102,14 @@ export function createAndOpenProject(): void {
     // create. The new tab boots `ProjectLoader`, finds nothing under the id,
     // and seeds `createEmptyProject()`; the first autosave lands it in
     // localStorage.
-    const id =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `proj-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    trace.action('menu:file-new-project:navigate', { id, mode: 'local' });
-    tab.location.href = `/builder/${id}`;
+    try {
+      const id = newLocalWebsiteId(localStorage, localWorkspaceForProject(localStorage, getProjectId()));
+      trace.action('menu:file-new-project:navigate', { id, mode: 'local' });
+      tab.location.href = `/builder/${id}`;
+    } catch {
+      tab.close();
+      toast.error('Could not create a local website. Check browser storage.');
+    }
     return;
   }
 
