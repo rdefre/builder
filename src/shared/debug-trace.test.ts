@@ -9,7 +9,7 @@ it('records an action without browser globals', () => {
   trace.action('branching-switch:late-bump', payload);
   payload.branch = 'another-branch';
 
-  expect(trace.getEntries().at(-1)).toMatchObject({
+  expect(trace.getEntries().slice(-1)[0]).toMatchObject({
     type: 'action',
     category: 'branching-switch:late-bump',
     data: { branch: 'draft' },
