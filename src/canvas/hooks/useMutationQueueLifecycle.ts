@@ -26,6 +26,10 @@ import { triggerAutosave } from '@/backend/autosave';
 import { dragStateOps } from '@/canvas/drag/drag-state-store';
 import { createDeferredDragFlush } from './deferred-drag-flush';
 import { trace } from '@/shared/debug-trace';
+import { userAtom } from '@/backend/user-store';
+import { getProjectId } from '@/backend/project-id';
+import { getBaseRevision } from '@/backend/save-revision';
+import { isViewerRole } from '@/code/stores/viewer-mode-store';
 import { expediteStableAtomSync } from './useStableAtomSync';
 
 /** Below this node count the stable-mirror cascade is cheap enough that an
@@ -49,6 +53,7 @@ export function useMutationQueueLifecycle({
   useEffect(() => {
     trace.action('useMutationQueueLifecycle:init', { codeLength: code.length });
     const renderer = getCanvasRenderer();
+    const userId = !isViewerRole() ? store.get(userAtom)?.id : undefined;
 
     // Initialize history with code apply callback + active file tracking + version bump
     initHistory(
@@ -160,6 +165,7 @@ export function useMutationQueueLifecycle({
           }
         },
       },
+      userId ? { userId, projectId: getProjectId(), revision: getBaseRevision() } : undefined,
     );
 
     // Wire modifyProjectFile's version bump to the Jotai store

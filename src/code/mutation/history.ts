@@ -13,9 +13,12 @@ import { clearBridgeReadCaches } from '@/canvas/canvas-bridge';
 import { triggerAutosave } from '@/backend/autosave';
 import { getDefaultStore } from 'jotai';
 import { projectVersionAtom } from '@/code/project/project-fs';
+import { z } from 'zod';
 
 const MAX_HISTORY = 100;
 const DEBOUNCE_MS = 300; // Group rapid changes (e.g., drag scrubbing)
+const MAX_RELOAD_ENTRIES = 20;
+const MAX_RELOAD_CHARS = 1024 * 1024;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +86,100 @@ interface HistoryEntry {
    *  while undo restores `uiLocation` (pre-op). Absent on old entries →
    *  redo falls back to `uiLocation`. */
   uiLocationAfter?: UiLocation;
+}
+
+const uiLocationSchema = z.object({
+  localizationLocale: z.string().nullable().optional(),
+  breadcrumb: z.array(z.string()).optional(),
+});
+const reloadEntrySchema = z.object({
+  diffs: z.array(z.object({
+    path: z.string().min(1),
+    oldContent: z.string().nullable(),
+    newContent: z.string().nullable(),
+  })).min(1),
+  selBefore: z.array(z.string()),
+  selAfter: z.array(z.string()),
+  activeFile: z.string(),
+  activeFileBefore: z.string().optional(),
+  uiLocation: uiLocationSchema.optional(),
+  uiLocationAfter: uiLocationSchema.optional(),
+});
+const reloadHistorySchema = z.object({
+  revision: z.number().int().nullable(),
+  branch: z.string(),
+  undo: z.array(reloadEntrySchema).max(MAX_RELOAD_ENTRIES),
+  redo: z.array(reloadEntrySchema).max(MAX_RELOAD_ENTRIES),
+});
+
+function reloadKey(userId: string, projectId: string): string {
+  return 'revyme:undo:v1:' + JSON.stringify([userId, projectId]);
+}
+
+/** Capture only history describing the files about to be saved. A live
+ *  coalesced gesture may still be open when a save starts. */
+export function captureReloadHistory() {
+  commitPendingHistory();
+  if (computeDiffs(lastSnapshot, projectFS.getSnapshot()).length > 0) return;
+  const recent = (stack: HistoryEntry[]) => stack.filter(entry => entry.diffs.length > 0).slice(-MAX_RELOAD_ENTRIES);
+  return { branch: projectFS.getActiveBranchId(), undo: recent(undoStack), redo: recent(redoStack) };
+}
+
+export function saveReloadHistory(
+  userId: string, projectId: string, revision: number | null,
+  history: ReturnType<typeof captureReloadHistory>,
+) {
+  try {
+    const key = reloadKey(userId, projectId);
+    if (history) {
+      const undo = [...history.undo];
+      const redo = [...history.redo];
+      while (undo.length || redo.length) {
+        const value = JSON.stringify({ ...history, revision, undo, redo });
+        if (value.length <= MAX_RELOAD_CHARS) {
+          sessionStorage.setItem(key, value);
+          return;
+        }
+        (redo.length >= undo.length ? redo : undo).shift();
+      }
+    }
+    sessionStorage.removeItem(key);
+  } catch {
+    // Unavailable browser storage must leave normal editing and saves usable.
+  }
+}
+
+/** Walk from the saved snapshot toward older entries without touching live
+ *  files. Stop at the first incompatible entry so undo cannot overwrite
+ *  source that changed outside this history. */
+function compatibleEntries(entries: HistoryEntry[], direction: 'undo' | 'redo', snapshot: Map<string, string>) {
+  const files = new Map(snapshot);
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const { diffs } = entries[i];
+    if (diffs.some(diff => isHistoryIgnoredPath(diff.path) ||
+      (files.get(diff.path) ?? null) !== (direction === 'undo' ? diff.newContent : diff.oldContent))) {
+      return entries.slice(i + 1);
+    }
+    for (const diff of diffs) {
+      const content = direction === 'undo' ? diff.oldContent : diff.newContent;
+      if (content === null) files.delete(diff.path);
+      else files.set(diff.path, content);
+    }
+  }
+  return entries;
+}
+
+function loadReloadHistory(userId: string, projectId: string, revision: number | null) {
+  try {
+    const raw = sessionStorage.getItem(reloadKey(userId, projectId));
+    if (!raw || raw.length > MAX_RELOAD_CHARS) return;
+    const result = reloadHistorySchema.safeParse(JSON.parse(raw));
+    if (!result.success || result.data.revision !== revision || result.data.branch !== projectFS.getActiveBranchId()) return;
+    undoStack = compatibleEntries(result.data.undo, 'undo', lastSnapshot);
+    redoStack = compatibleEntries(result.data.redo, 'redo', lastSnapshot);
+  } catch {
+    // A missing or damaged checkpoint starts a fresh history.
+  }
 }
 
 // ─── State ──────────────────────────────────────────────────────────────────
@@ -200,9 +297,8 @@ function computeDiffs(before: Map<string, string>, after: Map<string, string>): 
 function applyDiffsReverse(diffs: FileDiff[]): FileDiff[] {
   const forwardDiffs: FileDiff[] = [];
   for (const diff of diffs) {
-    // Capture current content for redo
-    const currentContent = projectFS.readFile(diff.path);
-    forwardDiffs.push({ path: diff.path, oldContent: currentContent, newContent: diff.newContent });
+    // Record both sides so a reloaded redo can verify its starting content.
+    forwardDiffs.push({ ...diff, newContent: projectFS.readFile(diff.path) });
     // Restore old content
     if (diff.oldContent === null) {
       projectFS.deleteFile(diff.path);
@@ -250,10 +346,12 @@ export function initHistory(
   },
   /** Editor-chrome location — which overlay covers the canvas. See `UiLocation`. */
   ui?: { get: () => UiLocation; set: (loc: UiLocation) => void },
+  reload?: { userId: string; projectId: string; revision: number | null },
 ): void {
   undoStack = [];
   redoStack = [];
   lastSnapshot = projectFS.getSnapshot();
+  if (reload) loadReloadHistory(reload.userId, reload.projectId, reload.revision);
   if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
   _historyDirty = false;
   pendingSelBefore = null;
@@ -273,7 +371,7 @@ export function initHistory(
     const code = projectFS.readFile(activeFile) ?? '';
     onApply(code);
   };
-  trace.action('history:init', { stackSize: 0, fileCount: lastSnapshot.size });
+  trace.action('history:init', { stackSize: undoStack.length, fileCount: lastSnapshot.size });
 }
 
 /**
