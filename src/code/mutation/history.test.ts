@@ -2,7 +2,7 @@
 // Tests the full cycle: push snapshots, undo restores files, redo re-applies.
 
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
-import { initHistory, pushHistory, pushHistoryImmediate, undo, redo, getHistoryState, syncHistoryCode, finishPendingRestore, sealPendingHistory, pushHistoryFileOp } from './history';
+import { initHistory, pushHistory, pushHistoryImmediate, undo, redo, getHistoryState, syncHistoryCode, finishPendingRestore, sealPendingHistory, pushHistoryFileOp, captureReloadHistory, saveReloadHistory } from './history';
 
 // Selection reselect + version bump are DEFERRED ~34ms after undo/redo
 // (canvas-first restore — see finishPendingRestore in history.ts). Tests
@@ -33,6 +33,53 @@ describe('history', () => {
     expect(state.canRedo).toBe(false);
     expect(state.undoSize).toBe(0);
     expect(state.redoSize).toBe(0);
+  });
+
+  test('reopens saved undo and redo for the same editor and revision', () => {
+    const file = 'app/page.tsx';
+    const context = { userId: 'editor', projectId: 'site', revision: 10 };
+    const reload = (scope = context) => {
+      projectFS.loadSnapshot(projectFS.getSnapshot());
+      initHistory('', () => {}, () => file, undefined, undefined, undefined, scope);
+    };
+    projectFS.writeFile(file, 'saved edit');
+    pushHistoryImmediate('saved edit');
+    saveReloadHistory(context.userId, context.projectId, context.revision, captureReloadHistory());
+
+    reload({ ...context, userId: 'other-editor' });
+    expect(undoNow()).toBe(false);
+    reload({ ...context, projectId: 'other-site' });
+    expect(undoNow()).toBe(false);
+    reload({ ...context, revision: 11 });
+    expect(undoNow()).toBe(false);
+    reload();
+    expect(undoNow()).toBe(true);
+    expect(projectFS.readFile(file)).toBe('initial code');
+
+    const afterUndo = { ...context, revision: 11 };
+    saveReloadHistory(afterUndo.userId, afterUndo.projectId, afterUndo.revision, captureReloadHistory());
+    reload(afterUndo);
+    expect(redoNow()).toBe(true);
+    expect(projectFS.readFile(file)).toBe('saved edit');
+
+    projectFS.writeFile(file, 'different on disk');
+    reload(afterUndo);
+    expect(redoNow()).toBe(false);
+    expect(projectFS.readFile(file)).toBe('different on disk');
+    saveReloadHistory(context.userId, context.projectId, context.revision, undefined);
+  });
+
+  test('restores reload history for a standalone project with no revision', () => {
+    const file = 'app/page.tsx';
+    const scope = { userId: 'local', projectId: 'standalone', revision: null };
+    projectFS.writeFile(file, 'standalone edit');
+    pushHistoryImmediate('standalone edit');
+    saveReloadHistory(scope.userId, scope.projectId, scope.revision, captureReloadHistory());
+
+    initHistory('', () => {}, () => file, undefined, undefined, undefined, scope);
+    expect(undoNow()).toBe(true);
+    expect(projectFS.readFile(file)).toBe('initial code');
+    saveReloadHistory(scope.userId, scope.projectId, scope.revision, undefined);
   });
 
   test('pushHistoryImmediate adds to undo stack', () => {

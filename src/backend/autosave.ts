@@ -10,6 +10,8 @@ import { SaveConflictError, type ProjectData } from './types';
 import { adoptForOverwrite, getBaseRevision, isRevisionInSync, setLoadedRevision } from './save-revision';
 import { projectFS } from '../code/project/project-fs';
 import { trace } from '@/shared/debug-trace';
+import { captureReloadHistory, saveReloadHistory } from '@/code/mutation/history';
+import { userAtom } from './user-store';
 
 const DEBOUNCE_MS = 2000;
 /** Bounded auto-retry after a failed save. Without it, `pendingSave` stayed
@@ -142,6 +144,8 @@ async function performSave(attempt = 0): Promise<SaveOutcome> {
     trace.action('autosave:skipped-conflict', { id });
     return record({ ok: false, conflict: true, error: SAVE_CONFLICT_MESSAGE });
   }
+  const userId = store.get(userAtom)?.id;
+  const history = userId ? captureReloadHistory() : undefined;
   const data = buildProjectData();
 
   store.set(saveStatusAtom, 'saving');
@@ -150,6 +154,7 @@ async function performSave(attempt = 0): Promise<SaveOutcome> {
 
   try {
     await backend.saveProject(id, data);
+    if (userId) saveReloadHistory(userId, id, getBaseRevision(), history);
     store.set(saveStatusAtom, 'saved');
     store.set(saveErrorAtom, null);
     pendingSave = false;
